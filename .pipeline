@@ -2,15 +2,11 @@ pipeline {
     agent any
 
     environment {
-        APP_NAME = "springboot-podman-demo"
-        VERSION = "2.0.0"
+        IMAGE_NAME = "699900816119.dkr.ecr.ap-south-1.amazonaws.com/springboot-podman-demo:2.0.0"
         AWS_REGION = "ap-south-1"
-        ECR_REGISTRY = "699900816119.dkr.ecr.ap-south-1.amazonaws.com"
-        IMAGE_NAME = "${ECR_REGISTRY}/${APP_NAME}:${VERSION}"
     }
 
     stages {
-
         stage('Checkout') {
             steps {
                 echo "Cloning source code from GitHub..."
@@ -21,10 +17,8 @@ pipeline {
         stage('Build Jar') {
             steps {
                 echo "Building the Spring Boot application JAR..."
-                sh '''
-                    mvn clean package -DskipTests
-                    echo "JAR build completed successfully."
-                '''
+                sh 'mvn clean package -DskipTests'
+                echo "JAR build completed successfully."
             }
         }
 
@@ -32,27 +26,7 @@ pipeline {
             steps {
                 echo "Building container image with Podman (using Amazon Corretto 17)..."
                 sh '''
-                    podman build -t ${IMAGE_NAME} .
-                    FROM docker.io/library/amazoncorretto:17
-                    WORKDIR /app
-                    COPY target/springboot-podman-demo-*.jar app.jar
-                    EXPOSE 8080
-                    ENTRYPOINT ["java", "-jar", "app.jar"]
-                    EOF
-                '''
-            }
-        }
-
-
-        stage('Test Container (optional)') {
-            steps {
-                echo "Running temporary container to verify startup..."
-                sh '''
-                    podman run -d -p 8080:8080 --name test-container ${IMAGE_NAME}
-                    sleep 10
-                    podman logs test-container || true
-                    podman stop test-container
-                    podman rm test-container
+                    podman build -t ${IMAGE_NAME} -f Dockerfile .
                 '''
             }
         }
@@ -61,26 +35,22 @@ pipeline {
             steps {
                 echo "Authenticating Podman with AWS ECR..."
                 sh '''
-                    aws ecr get-login-password --region ${AWS_REGION} | \
-                    podman login --username AWS --password-stdin ${ECR_REGISTRY}
+                    aws ecr get-login-password --region ${AWS_REGION} | podman login --username AWS --password-stdin 699900816119.dkr.ecr.ap-south-1.amazonaws.com
                 '''
             }
         }
 
         stage('Push to AWS ECR') {
             steps {
-                echo "Pushing image ${IMAGE_NAME} to AWS ECR..."
-                sh '''
-                    podman push ${IMAGE_NAME}
-                '''
+                echo "Pushing image to AWS ECR..."
+                sh 'podman push ${IMAGE_NAME}'
             }
         }
-
     }
 
     post {
         success {
-            echo "✅ Pipeline completed successfully. Image pushed to ECR: ${IMAGE_NAME}"
+            echo "✅ Pipeline executed successfully. Image pushed to ECR."
         }
         failure {
             echo "❌ Pipeline failed. Check logs above for errors."
