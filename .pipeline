@@ -3,65 +3,42 @@ pipeline {
 
     environment {
         AWS_REGION = 'ap-south-1'
-        IMAGE_NAME = 'springboot-podman-demo'
+        ECR_REPO = '699900816119.dkr.ecr.ap-south-1.amazonaws.com/springboot-podman-demo'
         IMAGE_TAG = '2.0.0'
-        ECR_URL = '699900816119.dkr.ecr.ap-south-1.amazonaws.com'
     }
 
     stages {
-
-        stage('Checkout Code') {
+        stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/nanirakesh/springboot-podman-demo.git'
             }
         }
 
-        stage('Build JAR using Amazon Corretto 17') {
+        stage('Build Image with Podman') {
             steps {
                 sh '''
-                    echo "Building project using Amazon Corretto 17..."
-                    podman run --rm -v $PWD:/app -w /app amazoncorretto:17 mvn clean package -DskipTests
+                podman build -t $ECR_REPO:$IMAGE_TAG .
+                podman images
                 '''
             }
         }
 
-        stage('Build Podman Image') {
+        stage('Run Tests') {
             steps {
-                sh '''
-                    echo "Building Podman image..."
-                    podman build -t $IMAGE_NAME:$IMAGE_TAG -f- . <<EOF
-FROM amazoncorretto:17
-WORKDIR /app
-COPY target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
-EOF
-                '''
+                sh 'podman run --rm $ECR_REPO:$IMAGE_TAG'
             }
         }
 
-        stage('Login and Push to ECR') {
+        stage('Push to ECR') {
             steps {
-                sh '''
-                    echo "Logging into AWS ECR..."
-                    aws ecr get-login-password --region $AWS_REGION | podman login --username AWS --password-stdin $ECR_URL
-
-                    echo "Tagging image..."
-                    podman tag $IMAGE_NAME:$IMAGE_TAG $ECR_URL/$IMAGE_NAME:$IMAGE_TAG
-
-                    echo "Pushing image to AWS ECR..."
-                    podman push $ECR_URL/$IMAGE_NAME:$IMAGE_TAG
-                '''
+                withCredentials([usernamePassword(credentialsId: 'aws-ecr', passwordVariable: 'AWS_SECRET', usernameVariable: 'AWS_USER')]) {
+                    sh '''
+                    aws ecr get-login-password --region $AWS_REGION | \
+                    podman login --username AWS --password-stdin $ECR_REPO
+                    podman push $ECR_REPO:$IMAGE_TAG
+                    '''
+                }
             }
-        }
-    }
-
-    post {
-        success {
-            echo "✅ Build, image creation, and push successful!"
-        }
-        failure {
-            echo "❌ Build failed. Check logs for details."
         }
     }
 }
