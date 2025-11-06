@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: springboot-podman-demo
+  labels:
+    app: springboot-podman-demo
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: springboot-podman-demo
+  template:
+    metadata:
+      labels:
+        app: springboot-podman-demo
+    spec:
+      containers:
+        - name: springboot-podman-demo
+          image: 699900816119.dkr.ecr.ap-south-1.amazonaws.com/springboot-podman-demo:1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod

@@ -1,0 +1,67 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'ap-south-1'
+        IMAGE_NAME = 'springboot-podman-demo'
+        IMAGE_TAG = '2.0.0'
+        ECR_URL = '699900816119.dkr.ecr.ap-south-1.amazonaws.com'
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build JAR using Amazon Corretto 17') {
+            steps {
+                sh '''
+                    echo "Building project using Amazon Corretto 17..."
+                    podman run --rm -v $PWD:/app -w /app amazoncorretto:17 mvn clean package -DskipTests
+                '''
+            }
+        }
+
+        stage('Build Podman Image') {
+            steps {
+                sh '''
+                    echo "Building Podman image..."
+                    podman build -t $IMAGE_NAME:$IMAGE_TAG -f- . <<EOF
+FROM amazoncorretto:17
+WORKDIR /app
+COPY target/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]
+EOF
+                '''
+            }
+        }
+
+        stage('Login and Push to ECR') {
+            steps {
+                sh '''
+                    echo "Logging into AWS ECR..."
+                    aws ecr get-login-password --region $AWS_REGION | podman login --username AWS --password-stdin $ECR_URL
+
+                    echo "Tagging image..."
+                    podman tag $IMAGE_NAME:$IMAGE_TAG $ECR_URL/$IMAGE_NAME:$IMAGE_TAG
+
+                    echo "Pushing image to AWS ECR..."
+                    podman push $ECR_URL/$IMAGE_NAME:$IMAGE_TAG
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Build, image creation, and push successful!"
+        }
+        failure {
+            echo "❌ Build failed. Check logs for details."
+        }
+    }
+}
