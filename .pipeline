@@ -32,7 +32,7 @@ pipeline {
             steps {
                 echo "Building container image with Podman (using Amazon Corretto 17)..."
                 sh '''
-                    podman build -t ${IMAGE_NAME} - <<'EOF'
+                    podman build -t ${IMAGE_NAME} .
                     FROM docker.io/library/amazoncorretto:17
                     WORKDIR /app
                     COPY target/springboot-podman-demo-*.jar app.jar
