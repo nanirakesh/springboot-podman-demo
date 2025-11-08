@@ -4,33 +4,43 @@ pipeline {
     environment {
         AWS_REGION = 'ap-south-1'
         IMAGE_NAME = 'springboot-podman-demo'
-        IMAGE_TAG = '2.0.0'
-        ECR_REPO = "699900816119.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_NAME}"
+        ECR_REGISTRY = "699900816119.dkr.ecr.${AWS_REGION}.amazonaws.com"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                echo 'Cloning source code from GitHub...'
+                echo '📥 Cloning source code from GitHub...'
                 git branch: 'main', url: 'https://github.com/nanirakesh/springboot-podman-demo.git'
             }
         }
 
         stage('Build Jar') {
             steps {
-                echo 'Building the Spring Boot application JAR...'
+                echo '⚙️ Building the Spring Boot application JAR...'
                 sh 'mvn clean package -DskipTests'
                 echo '✅ JAR build completed successfully.'
             }
         }
 
+        stage('Auto Version Tagging') {
+            steps {
+                script {
+                    // Automatically bump image version for each build
+                    def buildNumber = env.BUILD_NUMBER
+                    env.IMAGE_TAG = "2.0.${buildNumber}"
+                    echo "🏷 Using version tag: ${env.IMAGE_TAG}"
+                }
+            }
+        }
+
         stage('Build Image with Podman') {
             steps {
-                echo 'Building container image with Podman (using Amazon Corretto 17)...'
+                echo '🐳 Building container image using Podman (Amazon Corretto 17 base)...'
                 sh '''
-                    podman build -t ${ECR_REPO}:${IMAGE_TAG} -f Dockerfile .
-                    podman images
+                    podman build -t ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f Dockerfile .
+                    podman images | grep ${IMAGE_NAME}
                 '''
             }
         }
@@ -47,7 +57,9 @@ pipeline {
                         aws_secret_access_key = $AWS_SECRET_ACCESS_KEY
                         region = ${AWS_REGION}
                         EOF
-                        aws ecr get-login-password --region ${AWS_REGION} | podman login --username AWS --password-stdin 699900816119.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                        echo "✅ AWS credentials configured. Logging into ECR..."
+                        aws ecr get-login-password --region ${AWS_REGION} | podman login --username AWS --password-stdin ${ECR_REGISTRY}
                     '''
                 }
             }
@@ -55,9 +67,18 @@ pipeline {
 
         stage('Push to AWS ECR') {
             steps {
-                echo '📦 Pushing image to AWS ECR...'
+                echo '🚀 Pushing built image to AWS ECR...'
                 sh '''
-                    podman push ${ECR_REPO}:${IMAGE_TAG}
+                    podman push ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                '''
+            }
+        }
+
+        stage('Clean Up Local Images') {
+            steps {
+                echo '🧹 Cleaning up local images to save space...'
+                sh '''
+                    podman rmi ${ECR_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || true
                 '''
             }
         }
@@ -65,10 +86,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Pipeline executed successfully. Image pushed to ECR.'
+            echo "✅ Pipeline executed successfully. Image pushed to ECR with tag ${IMAGE_TAG}."
         }
         failure {
-            echo '❌ Pipeline failed. Check logs above for errors.'
+            echo '❌ Pipeline failed. Check logs above for details.'
         }
     }
 }
