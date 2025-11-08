@@ -27,8 +27,7 @@ pipeline {
         stage('Auto Version Tagging') {
             steps {
                 script {
-                    def buildNumber = env.BUILD_NUMBER
-                    env.IMAGE_TAG = "2.0.${buildNumber}"
+                    env.IMAGE_TAG = "2.0.${env.BUILD_NUMBER}"
                     echo "🏷 Using version tag: ${env.IMAGE_TAG}"
                 }
             }
@@ -50,12 +49,11 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
                     sh '''
                         mkdir -p ~/.aws
-                        cat > ~/.aws/credentials <<EOF
-                        [default]
-                        aws_access_key_id = $AWS_ACCESS_KEY_ID
-                        aws_secret_access_key = $AWS_SECRET_ACCESS_KEY
-                        region = ${AWS_REGION}
-                        EOF
+
+                        echo "[default]" > ~/.aws/credentials
+                        echo "aws_access_key_id = $AWS_ACCESS_KEY_ID" >> ~/.aws/credentials
+                        echo "aws_secret_access_key = $AWS_SECRET_ACCESS_KEY" >> ~/.aws/credentials
+                        echo "region = ${AWS_REGION}" >> ~/.aws/credentials
 
                         echo "✅ AWS credentials configured."
                         echo "🔑 Logging into AWS ECR..."
