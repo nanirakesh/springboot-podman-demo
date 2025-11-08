@@ -2,58 +2,73 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "699900816119.dkr.ecr.ap-south-1.amazonaws.com/springboot-podman-demo:2.0.0"
-        AWS_REGION = "ap-south-1"
+        AWS_REGION = 'ap-south-1'
+        IMAGE_NAME = 'springboot-podman-demo'
+        IMAGE_TAG = '2.0.0'
+        ECR_REPO = "699900816119.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_NAME}"
     }
 
     stages {
+
         stage('Checkout') {
             steps {
-                echo "Cloning source code from GitHub..."
+                echo 'Cloning source code from GitHub...'
                 git branch: 'main', url: 'https://github.com/nanirakesh/springboot-podman-demo.git'
             }
         }
 
         stage('Build Jar') {
             steps {
-                echo "Building the Spring Boot application JAR..."
+                echo 'Building the Spring Boot application JAR...'
                 sh 'mvn clean package -DskipTests'
-                echo "JAR build completed successfully."
+                echo '✅ JAR build completed successfully.'
             }
         }
 
         stage('Build Image with Podman') {
             steps {
-                echo "Building container image with Podman (using Amazon Corretto 17)..."
+                echo 'Building container image with Podman (using Amazon Corretto 17)...'
                 sh '''
-                    podman build -t ${IMAGE_NAME} -f Dockerfile .
+                    podman build -t ${ECR_REPO}:${IMAGE_TAG} -f Dockerfile .
+                    podman images
                 '''
             }
         }
 
         stage('Authenticate with AWS ECR') {
             steps {
-                echo "Authenticating Podman with AWS ECR..."
-                sh '''
-                    aws ecr get-login-password --region ${AWS_REGION} | podman login --username AWS --password-stdin 699900816119.dkr.ecr.ap-south-1.amazonaws.com
-                '''
+                echo '🔐 Authenticating Podman with AWS ECR...'
+                withCredentials([usernamePassword(credentialsId: 'aws-creds', usernameVariable: 'AWS_ACCESS_KEY_ID', passwordVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sh '''
+                        mkdir -p ~/.aws
+                        cat > ~/.aws/credentials <<EOF
+                        [default]
+                        aws_access_key_id = $AWS_ACCESS_KEY_ID
+                        aws_secret_access_key = $AWS_SECRET_ACCESS_KEY
+                        region = ${AWS_REGION}
+                        EOF
+                        aws ecr get-login-password --region ${AWS_REGION} | podman login --username AWS --password-stdin 699900816119.dkr.ecr.${AWS_REGION}.amazonaws.com
+                    '''
+                }
             }
         }
 
         stage('Push to AWS ECR') {
             steps {
-                echo "Pushing image to AWS ECR..."
-                sh 'podman push ${IMAGE_NAME}'
+                echo '📦 Pushing image to AWS ECR...'
+                sh '''
+                    podman push ${ECR_REPO}:${IMAGE_TAG}
+                '''
             }
         }
     }
 
     post {
         success {
-            echo "✅ Pipeline executed successfully. Image pushed to ECR."
+            echo '✅ Pipeline executed successfully. Image pushed to ECR.'
         }
         failure {
-            echo "❌ Pipeline failed. Check logs above for errors."
+            echo '❌ Pipeline failed. Check logs above for errors.'
         }
     }
 }
